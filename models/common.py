@@ -686,9 +686,16 @@ class AutoShape(nn.Module):
                 elif isinstance(im, Image.Image):  # PIL Image
                     im, f = np.asarray(exif_transpose(im)), getattr(im, 'filename', f) or f
                 files.append(Path(f).with_suffix('.jpg').name)
-                if im.shape[0] < 5:  # image in CHW
+
+                #Monochrome support
+                if im.shape[0] < 5 and im.ndim == 3:  # image in CHW
                     im = im.transpose((1, 2, 0))  # reverse dataloader .transpose(2, 0, 1)
-                im = im[..., :3] if im.ndim == 3 else cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)  # enforce 3ch input
+                # im = im[..., :3] if im.ndim == 3 else cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)  # enforce 3ch input
+                if im.ndim == 3:
+                    im = im[..., :3]
+                else:
+                    im = im[..., np.newaxis]
+
                 s = im.shape[:2]  # HWC
                 shape0.append(s)  # image shape
                 g = max(size) / max(s)  # gain
@@ -696,7 +703,13 @@ class AutoShape(nn.Module):
                 ims[i] = im if im.data.contiguous else np.ascontiguousarray(im)  # update
             shape1 = [make_divisible(x, self.stride) for x in np.array(shape1).max(0)]  # inf shape
             x = [letterbox(im, shape1, auto=False)[0] for im in ims]  # pad
-            x = np.ascontiguousarray(np.array(x).transpose((0, 3, 1, 2)))  # stack and BHWC to BCHW
+            
+            #Monochrome support
+            x   = np.array(x)
+            if x.ndim == 3:
+                x = x[..., np.newaxis]
+            x = np.ascontiguousarray(x.transpose((0, 3, 1, 2)))  # stack and BHWC to BCHW
+            
             x = torch.from_numpy(x).to(p.device).type_as(p) / 255  # uint8 to fp16/32
 
         with amp.autocast(autocast):
@@ -725,7 +738,15 @@ class Detections:
         super().__init__()
         d = pred[0].device  # device
         gn = [torch.tensor([*(im.shape[i] for i in [1, 0, 1, 0]), 1, 1], device=d) for im in ims]  # normalizations
-        self.ims = ims  # list of images as numpy arrays
+
+        #Monochrome support
+        new_ims = []
+        for img in ims:
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            new_ims.append(img)
+
+        self.ims = new_ims  # list of images as numpy arrays
         self.pred = pred  # list of tensors pred[0] = (xyxy, conf, cls)
         self.names = names  # class names
         self.files = files  # image filenames
