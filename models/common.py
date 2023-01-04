@@ -742,7 +742,7 @@ class Detections:
         #Monochrome support
         new_ims = []
         for img in ims:
-            if img.ndim == 2:
+            if img.shape[2] == 1:
                 img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
             new_ims.append(img)
 
